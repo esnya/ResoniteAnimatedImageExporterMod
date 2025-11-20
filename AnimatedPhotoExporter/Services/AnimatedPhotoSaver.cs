@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Reflection;
 using AnimatedPhotoExporter.Configuration;
 using FrooxEngine;
 
@@ -11,28 +10,23 @@ internal static class AnimatedPhotoSaver
 {
     internal static Task SaveAnimatedPhotoAsync(
         PhotoMetadata metadata,
-        AnimationMetadata animation,
-        bool autoSave
+        AnimationMetadata animation
     )
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(animation);
 
-        Slot? slot = metadata.Slot;
         StaticTexture2D? texture = animation.Texture;
         Uri? url = texture.URL.Value;
         Engine engine = metadata.Engine;
         DateTime timeTaken = metadata.TimeTaken.Value.ToLocalTime();
-        _ = autoSave; // kept for future format branching
-        if (slot == null || texture == null || url == null)
+        if (texture == null || url == null)
         {
             AnimatedPhotoExporterMod.Warn("Texture or slot missing; cannot export.");
             return Task.CompletedTask;
         }
 
-        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        metadata.StartGlobalTask(async () =>
+        return metadata.StartGlobalTask(async () =>
         {
             try
             {
@@ -50,33 +44,22 @@ internal static class AnimatedPhotoSaver
 
                 AnimatedImageFormat format = AnimatedPhotoExporterConfiguration.Format;
 
-                string platformName = ResolvePlatformName(engine);
-                // Disk export mirrors vanilla Windows flow: My Pictures/<PlatformName> with timestamped filename.
-                string outputPath = BuildDiskPath(platformName, timeTaken, GetExtension(format));
-                if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written)
-                    && !string.IsNullOrEmpty(written))
+                string outputPath = BuildDiskPath(
+                    ResolvePlatformName(engine),
+                    timeTaken,
+                    GetExtension(format)
+                );
+                if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written) &&
+                    !string.IsNullOrEmpty(written))
                 {
                     AnimatedPhotoExporterMod.Msg($"Animated photo saved to {written}.");
-
-                    engine.PlatformInterface.NotifyOfScreenshot(
-                        metadata.World,
-                        written,
-                        ScreenshotType.Mono,
-                        metadata.TimeTaken.Value
-                    );
                 }
             }
             catch (Exception ex)
             {
                 AnimatedPhotoExporterMod.Warn($"Animated photo export failed: {ex}");
             }
-            finally
-            {
-                completion.TrySetResult();
-            }
         });
-
-        return completion.Task;
     }
 
     private static string BuildDiskPath(string platformName, DateTime timeTaken, string extension)
@@ -105,35 +88,14 @@ internal static class AnimatedPhotoSaver
         {
             AnimatedImageFormat.WebP => ".webp",
             AnimatedImageFormat.Mng => ".mng",
-            _ => ".anim",
+            _ => ".anim"
         };
     }
 
     private static string ResolvePlatformName(Engine engine)
     {
-        try
-        {
-            object? cloud = engine
-                .GetType()
-                .GetProperty("Cloud", BindingFlags.Public | BindingFlags.Instance)
-                ?.GetValue(engine);
-
-            object? platform = cloud?
-                .GetType()
-                .GetProperty("Platform", BindingFlags.Public | BindingFlags.Instance)
-                ?.GetValue(cloud);
-
-            object? name = platform?
-                .GetType()
-                .GetProperty("Name", BindingFlags.Public | BindingFlags.Instance)
-                ?.GetValue(platform);
-
-            string? nameString = name as string ?? name?.ToString();
-            return string.IsNullOrWhiteSpace(nameString) ? "Resonite" : nameString;
-        }
-        catch
-        {
-            return "Resonite";
-        }
+        return string.IsNullOrWhiteSpace(engine.PlatformInterface?.PlatformName)
+            ? "Resonite"
+            : engine.PlatformInterface.PlatformName;
     }
 }

@@ -12,7 +12,7 @@ internal static class PhotoMetadataSavePatch
 {
     [HarmonyPostfix]
     [HarmonyPatch(nameof(PhotoMetadata.NotifyOfScreenshot))]
-    private static void AfterNotify(PhotoMetadata __instance, bool autoSave, ref Task __result)
+    private static void AfterNotify(PhotoMetadata __instance, ref Task __result)
     {
         if (!AnimatedPhotoExporterConfiguration.IsEnabled)
         {
@@ -34,7 +34,7 @@ internal static class PhotoMetadataSavePatch
         }
 
         AnimatedPhotoExporterMod.Msg("Atlas animation detected; exporting animated photo alongside default save.");
-        Task animatedSave = AnimatedPhotoSaver.SaveAnimatedPhotoAsync(__instance, animation, autoSave);
+        Task animatedSave = AnimatedPhotoSaver.SaveAnimatedPhotoAsync(__instance, animation);
 
         __result = __result == null ? animatedSave : Task.WhenAll(__result, animatedSave);
     }
