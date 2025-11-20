@@ -1,0 +1,109 @@
+<Project>
+  <PropertyGroup>
+    <Authors>esnya</Authors>
+    <Description>Exports animated screenshot items created with AnimatedPhotoExporter</Description>
+    <RepositoryUrl>https://github.com/esnya/ResoniteAnimatedImageExporter</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Copyright>Copyright (c) 2025 $(Authors)</Copyright>
+    <PackageTags>Resonite,Mod,ResoniteModLoader</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Deterministic>true</Deterministic>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <DebugType Condition="'$(Configuration)'=='Debug'">embedded</DebugType>
+    <DebugType Condition="'$(Configuration)'=='Release'">pdbonly</DebugType>
+    <Optimize Condition="'$(Configuration)'=='Release'">true</Optimize>
+    <AssemblyTitle>$(MSBuildProjectName)</AssemblyTitle>
+    <Product>$(MSBuildProjectName)</Product>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-all</AnalysisLevel>
+    <WarningLevel>9999</WarningLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>NU1701</WarningsNotAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>$(IsTestProject)</CopyLocalLockFileAssemblies>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+  <PropertyGroup>
+    <EnableResoniteHotReloadLib Condition="'$(EnableResoniteHotReloadLib)'==''"
+      >false</EnableResoniteHotReloadLib
+    >
+    <CopyToMods Condition="'$(CopyToMods)'==''">false</CopyToMods>
+    <CopyLocalLockFileAssemblies Condition="'$(CopyToMods)'=='true'">true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableResoniteHotReloadLib)'=='true'">
+    <DefineConstants>$(DefineConstants);USE_RESONITE_HOT_RELOAD_LIB</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ResonitePath)'==''">
+    <ResonitePath>$(MSBuildThisFileDirectory)Resonite/</ResonitePath>
+    <ResonitePath Condition="Exists('/mnt/c/Program Files (x86)/Steam/steamapps/common/Resonite/')"
+      >/mnt/c/Program Files (x86)/Steam/steamapps/common/Resonite/</ResonitePath
+    >
+    <ResonitePath Condition="Exists('C:\Program Files (x86)\Steam\steamapps\common\Resonite\')"
+      >C:\Program Files (x86)\Steam\steamapps\common\Resonite\</ResonitePath
+    >
+    <ResonitePath Condition="Exists('$(HOME)/.steam/steam/steamapps/common/Resonite/')"
+      >$(HOME)/.steam/steam/steamapps/common/Resonite/</ResonitePath
+    >
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ResonitePath)'!=''">
+    <ResolvedResonitePath>$([MSBuild]::EnsureTrailingSlash($([System.IO.Path]::GetFullPath('$(ResonitePath)'))))</ResolvedResonitePath>
+    <ResoniteLibrariesDir>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'Libraries'))</ResoniteLibrariesDir>
+    <ResoniteLibsDir>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'rml_libs'))</ResoniteLibsDir>
+    <ResoniteModsDir>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'rml_mods'))</ResoniteModsDir>
+    <ResoniteHotReloadModsDir>$([System.IO.Path]::Combine('$(ResoniteModsDir)', 'HotReloadMods'))</ResoniteHotReloadModsDir>
+    <ResoniteFrooxEngineDll>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'FrooxEngine.dll'))</ResoniteFrooxEngineDll>
+  </PropertyGroup>
+  <PropertyGroup Condition="!Exists('$(MSBuildThisFileDirectory).git')">
+    <Version>0.0.0-local</Version>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(IsTestProject)'!='true'">
+    <Reference Include="ResoniteModLoader">
+      <HintPath>$([System.IO.Path]::Combine('$(ResoniteLibrariesDir)', 'ResoniteModLoader.dll'))</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="HarmonyLib">
+      <HintPath>$([System.IO.Path]::Combine('$(ResoniteLibsDir)', '0Harmony.dll'))</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FrooxEngine">
+      <HintPath>$(ResoniteFrooxEngineDll)</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FrooxEngine.Store">
+      <HintPath>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'FrooxEngine.Store.dll'))</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SkyFrost.Base">
+      <HintPath>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'SkyFrost.Base.dll'))</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Elements.Assets">
+      <HintPath>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'Elements.Assets.dll'))</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Elements.Core">
+      <HintPath>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'Elements.Core.dll'))</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ResoniteHotReloadLib" Condition="'$(EnableResoniteHotReloadLib)'=='true'">
+      <HintPath>$([System.IO.Path]::Combine('$(ResoniteLibsDir)', 'ResoniteHotReloadLib.dll'))</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory).git')">
+    <PackageReference Include="GitVersion.MsBuild" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory).github\**\*" LinkBase=".github" />
+    <EditorConfigFiles Remove="$(MSBuildProjectDirectory)**\*.editorconfig" />
+  </ItemGroup>
+</Project>
