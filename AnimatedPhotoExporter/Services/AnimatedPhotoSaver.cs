@@ -43,16 +43,16 @@ internal static class AnimatedPhotoSaver
                 }
 
                 AnimatedImageFormat format = AnimatedPhotoExporterConfiguration.Format;
+                bool exportGif = AnimatedPhotoExporterConfiguration.ExportGif;
+                string platformName = ResolvePlatformName(engine);
 
-                string outputPath = BuildDiskPath(
-                    ResolvePlatformName(engine),
-                    timeTaken,
-                    GetExtension(format)
-                );
-                if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written) &&
-                    !string.IsNullOrEmpty(written))
+                string primaryPath = BuildDiskPath(platformName, timeTaken, GetExtension(format));
+                WriteIfPossible(animation, format, primaryPath, atlasPath);
+
+                if (exportGif && format != AnimatedImageFormat.Gif)
                 {
-                    AnimatedPhotoExporterMod.Msg($"Animated photo saved to {written}.");
+                    string gifPath = BuildDiskPath(platformName, timeTaken, ".gif");
+                    WriteIfPossible(animation, AnimatedImageFormat.Gif, gifPath, atlasPath);
                 }
             }
             catch (Exception ex)
@@ -88,8 +88,23 @@ internal static class AnimatedPhotoSaver
         {
             AnimatedImageFormat.WebP => ".webp",
             AnimatedImageFormat.Mng => ".mng",
+            AnimatedImageFormat.Gif => ".gif",
             _ => ".anim"
         };
+    }
+
+    private static void WriteIfPossible(
+        AnimationMetadata animation,
+        AnimatedImageFormat format,
+        string outputPath,
+        string atlasPath
+    )
+    {
+        if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written) &&
+            !string.IsNullOrEmpty(written))
+        {
+            AnimatedPhotoExporterMod.Msg($"Animated photo saved to {written}.");
+        }
     }
 
     private static string ResolvePlatformName(Engine engine)

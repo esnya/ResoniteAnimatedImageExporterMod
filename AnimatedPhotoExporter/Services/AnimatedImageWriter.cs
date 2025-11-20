@@ -116,19 +116,21 @@ internal static class AnimatedImageWriter
         }
 
         collection.Coalesce();
-        if (format == AnimatedImageFormat.WebP)
+        switch (format)
         {
-            WebPWriteDefines defines = new() { Lossless = true };
-            collection.Write(outputPath, defines);
-        }
-        else if (format == AnimatedImageFormat.Mng)
-        {
-            collection.Write(outputPath, MagickFormat.Mng);
-        }
-        else
-        {
-            AnimatedPhotoExporterMod.Warn($"Unsupported animated format {format}.");
-            return false;
+            case AnimatedImageFormat.WebP:
+                WebPWriteDefines defines = new() { Lossless = true };
+                collection.Write(outputPath, defines);
+                break;
+            case AnimatedImageFormat.Mng:
+                collection.Write(outputPath, MagickFormat.Mng);
+                break;
+            case AnimatedImageFormat.Gif:
+                collection.Write(outputPath, MagickFormat.Gif);
+                break;
+            default:
+                AnimatedPhotoExporterMod.Warn($"Unsupported animated format {format}.");
+                return false;
         }
         writtenPath = outputPath;
         return true;

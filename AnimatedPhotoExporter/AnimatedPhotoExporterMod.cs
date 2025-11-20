@@ -29,6 +29,16 @@ public class AnimatedPhotoExporterMod : ResoniteMod
             null
         );
 
+    [AutoRegisterConfigKey]
+    internal static readonly ModConfigurationKey<bool> ExportGifKey =
+        new(
+            "ExportGif",
+            "Also export a GIF copy (lossy but widely supported)",
+            () => true,
+            false,
+            null
+        );
+
     /// <inheritdoc />
     public override string Name =>
         Assembly.GetCustomAttribute<AssemblyTitleAttribute>()?.Title ?? string.Empty;

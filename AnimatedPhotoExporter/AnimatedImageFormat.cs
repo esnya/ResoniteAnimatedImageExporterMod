@@ -4,4 +4,5 @@ internal enum AnimatedImageFormat
 {
     WebP,
     Mng,
+    Gif,
 }

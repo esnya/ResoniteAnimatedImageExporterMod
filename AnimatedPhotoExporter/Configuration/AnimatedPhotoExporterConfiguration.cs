@@ -16,6 +16,9 @@ internal static class AnimatedPhotoExporterConfiguration
     internal static AnimatedImageFormat Format =>
         ReadOrDefault(AnimatedPhotoExporterMod.FormatKey, defaultValue: AnimatedImageFormat.WebP);
 
+    internal static bool ExportGif =>
+        ReadOrDefault(AnimatedPhotoExporterMod.ExportGifKey, defaultValue: true);
+
     private static T ReadOrDefault<T>(ModConfigurationKey<T> key, T defaultValue)
     {
         if (configuration != null && configuration.TryGetValue(key, out T? value) && value != null)
