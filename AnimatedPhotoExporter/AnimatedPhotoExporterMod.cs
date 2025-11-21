@@ -40,6 +40,36 @@ public class AnimatedPhotoExporterMod : ResoniteMod
         );
 
     [AutoRegisterConfigKey]
+    internal static readonly ModConfigurationKey<bool> WebpLosslessKey =
+        new(
+            "WebpLossless",
+            "Use lossless WebP encoding (turn off for faster, smaller lossy output)",
+            () => false,
+            false,
+            null
+        );
+
+    [AutoRegisterConfigKey]
+    internal static readonly ModConfigurationKey<int> WebpQualityKey =
+        new(
+            "WebpQuality",
+            "WebP quality when lossless is disabled (1-100)",
+            () => 90,
+            false,
+            null
+        );
+
+    [AutoRegisterConfigKey]
+    internal static readonly ModConfigurationKey<int> WebpMethodKey =
+        new(
+            "WebpMethod",
+            "WebP encoding method 0 (fastest) – 6 (best)",
+            () => 3,
+            false,
+            null
+        );
+
+    [AutoRegisterConfigKey]
     internal static readonly ModConfigurationKey<bool> ExportGifKey =
         new(
             "ExportGif",

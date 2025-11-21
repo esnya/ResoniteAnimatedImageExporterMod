@@ -22,6 +22,15 @@ internal static class AnimatedPhotoExporterConfiguration
     internal static bool IntegrateScreenshotExtensions =>
         ReadOrDefault(AnimatedPhotoExporterMod.IntegrateScreenshotExtensionsKey, defaultValue: true);
 
+    internal static bool WebpLossless =>
+        ReadOrDefault(AnimatedPhotoExporterMod.WebpLosslessKey, defaultValue: false);
+
+    internal static int WebpQuality =>
+        ReadOrDefault(AnimatedPhotoExporterMod.WebpQualityKey, defaultValue: 90);
+
+    internal static int WebpMethod =>
+        ReadOrDefault(AnimatedPhotoExporterMod.WebpMethodKey, defaultValue: 3);
+
     private static T ReadOrDefault<T>(ModConfigurationKey<T> key, T defaultValue)
     {
         if (configuration != null && configuration.TryGetValue(key, out T? value) && value != null)

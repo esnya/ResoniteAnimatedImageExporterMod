@@ -1,3 +1,4 @@
+using AnimatedPhotoExporter.Configuration;
 using Elements.Core;
 using ImageMagick;
 using ImageMagick.Formats;
@@ -105,9 +106,12 @@ internal static class AnimatedImageWriter
 
             MagickGeometry geometry = new() { X = x, Y = y, Width = (uint)width, Height = (uint)height };
 
-            MagickImage frame = new(atlas);
-            frame.Crop(geometry);
+            MagickImage frame = (MagickImage)atlas.CloneArea(geometry);
             frame.Page = new MagickGeometry { Width = (uint)width, Height = (uint)height };
+            if (!AnimatedPhotoExporterConfiguration.WebpLossless)
+            {
+                frame.Quality = (byte)Math.Clamp(AnimatedPhotoExporterConfiguration.WebpQuality, 1, 100);
+            }
 
             int delayCentiseconds = (int)Math.Max(1, Math.Round(100f / frameRate));
             frame.AnimationDelay = (ushort)delayCentiseconds;
@@ -115,11 +119,14 @@ internal static class AnimatedImageWriter
             collection.Add(frame);
         }
 
-        collection.Coalesce();
         switch (format)
         {
             case AnimatedImageFormat.WebP:
-                WebPWriteDefines defines = new() { Lossless = true };
+                WebPWriteDefines defines = new()
+                {
+                    Lossless = AnimatedPhotoExporterConfiguration.WebpLossless,
+                    Method = Math.Clamp(AnimatedPhotoExporterConfiguration.WebpMethod, 0, 6)
+                };
                 collection.Write(outputPath, defines);
                 break;
             case AnimatedImageFormat.Mng:

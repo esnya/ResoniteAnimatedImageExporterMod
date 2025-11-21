@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Reflection;
 using AnimatedPhotoExporter.Configuration;
 using FrooxEngine;
+#if DEBUG
+using System.Diagnostics;
+#endif
 
 #pragma warning disable IDE0002 // Keep explicit type and namespace usage for clarity in mod logs
 
@@ -21,6 +24,10 @@ internal static class AnimatedPhotoSaver
         Uri? url = texture.URL.Value;
         Engine engine = metadata.Engine;
         DateTime timeTaken = metadata.TimeTaken.Value.ToLocalTime();
+#if DEBUG
+        Stopwatch total = Stopwatch.StartNew();
+        Stopwatch gather = Stopwatch.StartNew();
+#endif
         if (texture == null || url == null)
         {
             AnimatedPhotoExporterMod.Warn("Texture or slot missing; cannot export.");
@@ -32,28 +39,61 @@ internal static class AnimatedPhotoSaver
             try
             {
                 string? atlasPath = await engine.AssetManager.GatherAssetFile(url, 100f).ConfigureAwait(false);
+#if DEBUG
+                gather.Stop();
+#endif
                 if (string.IsNullOrEmpty(atlasPath))
                 {
                     AnimatedPhotoExporterMod.Warn("Failed to gather atlas file for animated photo.");
                     return;
                 }
 
+#if DEBUG
+                Stopwatch wait = Stopwatch.StartNew();
+#endif
                 while (texture.Asset == null || texture.Asset.LoadState != AssetLoadState.FullyLoaded)
                 {
                     await default(NextUpdate);
                 }
+#if DEBUG
+                wait.Stop();
+#endif
 
                 AnimatedImageFormat format = AnimatedPhotoExporterConfiguration.Format;
                 bool exportGif = AnimatedPhotoExporterConfiguration.ExportGif;
                 string platformName = ResolvePlatformName(engine);
 
                 string primaryPath = BuildDiskPath(platformName, timeTaken, GetExtension(format));
-                WriteIfPossible(metadata, animation, format, primaryPath, atlasPath);
+                WriteIfPossible(
+                    metadata,
+                    animation,
+                    format,
+                    primaryPath,
+                    atlasPath
+#if DEBUG
+                    ,
+                    total,
+                    gather,
+                    wait
+#endif
+                );
 
                 if (exportGif && format != AnimatedImageFormat.Gif)
                 {
                     string gifPath = BuildDiskPath(platformName, timeTaken, ".gif");
-                    WriteIfPossible(metadata, animation, AnimatedImageFormat.Gif, gifPath, atlasPath);
+                    WriteIfPossible(
+                        metadata,
+                        animation,
+                        AnimatedImageFormat.Gif,
+                        gifPath,
+                        atlasPath
+#if DEBUG
+                        ,
+                        total,
+                        gather,
+                        wait
+#endif
+                    );
                 }
             }
             catch (Exception ex)
@@ -108,12 +148,30 @@ internal static class AnimatedPhotoSaver
         AnimatedImageFormat format,
         string outputPath,
         string atlasPath
+#if DEBUG
+        ,
+        Stopwatch total,
+        Stopwatch gather,
+        Stopwatch wait
+#endif
     )
     {
+#if DEBUG
+        Stopwatch write = Stopwatch.StartNew();
+#endif
         if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written) &&
             !string.IsNullOrEmpty(written))
         {
+#if DEBUG
+            write.Stop();
+            AnimatedPhotoExporterMod.Msg(
+                $"Animated photo saved to {written}. " +
+                $"Gather {gather.Elapsed.TotalSeconds:F2}s Wait {wait.Elapsed.TotalSeconds:F2}s Encode {write.Elapsed.TotalSeconds:F2}s Total {total.Elapsed.TotalSeconds:F2}s " +
+                $"Frames {animation.FrameCount} Rate {animation.FrameRate:F1} AtlasFrames {animation.Atlas.Frames}"
+            );
+#else
             AnimatedPhotoExporterMod.Msg($"Animated photo saved to {written}.");
+#endif
             TryIntegrateWithScreenshotExtensions(metadata, written);
         }
     }
