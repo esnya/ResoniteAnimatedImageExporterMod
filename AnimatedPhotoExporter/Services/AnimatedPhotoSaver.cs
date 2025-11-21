@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Reflection;
 using AnimatedPhotoExporter.Configuration;
 using FrooxEngine;
 
@@ -47,12 +48,12 @@ internal static class AnimatedPhotoSaver
                 string platformName = ResolvePlatformName(engine);
 
                 string primaryPath = BuildDiskPath(platformName, timeTaken, GetExtension(format));
-                WriteIfPossible(animation, format, primaryPath, atlasPath);
+                WriteIfPossible(metadata, animation, format, primaryPath, atlasPath);
 
                 if (exportGif && format != AnimatedImageFormat.Gif)
                 {
                     string gifPath = BuildDiskPath(platformName, timeTaken, ".gif");
-                    WriteIfPossible(animation, AnimatedImageFormat.Gif, gifPath, atlasPath);
+                    WriteIfPossible(metadata, animation, AnimatedImageFormat.Gif, gifPath, atlasPath);
                 }
             }
             catch (Exception ex)
@@ -68,6 +69,14 @@ internal static class AnimatedPhotoSaver
             Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
             string.IsNullOrWhiteSpace(platformName) ? "Resonite" : platformName
         );
+        if (AnimatedPhotoExporterConfiguration.IntegrateScreenshotExtensions && IsScreenshotExtensionsPresent())
+        {
+            bool dig = TryReadScreenshotExtensionsBool("DigFolderWhenSavingKey") ?? true; // mod default is true
+            if (dig)
+            {
+                root = Path.Combine(root, timeTaken.ToString("yyyy-MM", CultureInfo.InvariantCulture));
+            }
+        }
         Directory.CreateDirectory(root);
 
         string baseName = timeTaken.ToString("yyyy-MM-dd HH.mm.ss", CultureInfo.InvariantCulture);
@@ -94,6 +103,7 @@ internal static class AnimatedPhotoSaver
     }
 
     private static void WriteIfPossible(
+        PhotoMetadata metadata,
         AnimationMetadata animation,
         AnimatedImageFormat format,
         string outputPath,
@@ -104,13 +114,117 @@ internal static class AnimatedPhotoSaver
             !string.IsNullOrEmpty(written))
         {
             AnimatedPhotoExporterMod.Msg($"Animated photo saved to {written}.");
+            TryIntegrateWithScreenshotExtensions(metadata, written);
         }
     }
 
     private static string ResolvePlatformName(Engine engine)
     {
-        return string.IsNullOrWhiteSpace(engine.PlatformInterface?.PlatformName)
-            ? "Resonite"
-            : engine.PlatformInterface.PlatformName;
+        try
+        {
+            object? cloud = engine.GetType().GetProperty("Cloud")?.GetValue(engine);
+            object? platform = cloud?.GetType().GetProperty("Platform")?.GetValue(cloud);
+            object? nameObj = platform?.GetType().GetProperty("Name")?.GetValue(platform);
+            string? name = nameObj as string ?? nameObj?.ToString();
+            return string.IsNullOrWhiteSpace(name) ? "Resonite" : name;
+        }
+        catch
+        {
+            return "Resonite";
+        }
+    }
+
+    private static void TryIntegrateWithScreenshotExtensions(PhotoMetadata metadata, string outputPath)
+    {
+        if (!AnimatedPhotoExporterConfiguration.IntegrateScreenshotExtensions)
+        {
+            return;
+        }
+
+        // Only run when the companion mod is present and its dependencies exist.
+        Type? metadataType = Type.GetType("ResoniteScreenshotExtensions.Metadata, ResoniteScreenshotExtensions");
+        Type? xmpType = Type.GetType("ResoniteScreenshotExtensions.XmpMetadata, ResoniteScreenshotExtensions");
+        Type? bitmapType = Type.GetType("FreeImageAPI.FreeImageBitmap, FreeImageNET")
+            ?? Type.GetType("FreeImageAPI.FreeImageBitmap, FreeImageAPI");
+
+        if (metadataType == null || xmpType == null || bitmapType == null)
+        {
+            return;
+        }
+
+        try
+        {
+            object rseMetadata = Activator.CreateInstance(metadataType, metadata)!;
+            object bitmap = Activator.CreateInstance(bitmapType, outputPath)!;
+            try
+            {
+                Type[] signature = [bitmapType, metadataType];
+                object[] args = [bitmap, rseMetadata];
+                MethodInfo? upsert = xmpType.GetMethod(
+                    "UpsertPhotoMetadata",
+                    BindingFlags.Public | BindingFlags.Static,
+                    null,
+                    signature,
+                    null
+                );
+                upsert?.Invoke(null, args);
+            }
+            finally
+            {
+                (bitmap as IDisposable)?.Dispose();
+            }
+        }
+        catch (Exception ex)
+        {
+            AnimatedPhotoExporterMod.Warn($"ScreenshotExtensions integration failed for {outputPath}: {ex}");
+        }
+    }
+
+    private static bool IsScreenshotExtensionsPresent()
+    {
+        return Type.GetType("ResoniteScreenshotExtensions.ResoniteScreenshotExtensions, ResoniteScreenshotExtensions") != null;
+    }
+
+    private static bool? TryReadScreenshotExtensionsBool(string keyFieldName)
+    {
+        try
+        {
+            Type? rseType = Type.GetType("ResoniteScreenshotExtensions.ResoniteScreenshotExtensions, ResoniteScreenshotExtensions");
+            if (rseType == null)
+            {
+                return null;
+            }
+
+            FieldInfo? configField = rseType.GetField("_config", BindingFlags.NonPublic | BindingFlags.Static);
+            object? config = configField?.GetValue(null);
+            if (config == null)
+            {
+                return null;
+            }
+
+            FieldInfo? keyField = rseType.GetField(keyFieldName, BindingFlags.Public | BindingFlags.Static);
+            object? keyInstance = keyField?.GetValue(null);
+            if (keyInstance == null)
+            {
+                return null;
+            }
+
+            MethodInfo? getValue = config
+                .GetType()
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .FirstOrDefault(m => m.Name == "GetValue" && m.GetParameters().Length == 1);
+            if (getValue == null)
+            {
+                return null;
+            }
+
+            object[] args = [keyInstance];
+            object? result = getValue.Invoke(config, args);
+            return result as bool?;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

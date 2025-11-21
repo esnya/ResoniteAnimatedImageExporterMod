@@ -19,6 +19,9 @@ internal static class AnimatedPhotoExporterConfiguration
     internal static bool ExportGif =>
         ReadOrDefault(AnimatedPhotoExporterMod.ExportGifKey, defaultValue: true);
 
+    internal static bool IntegrateScreenshotExtensions =>
+        ReadOrDefault(AnimatedPhotoExporterMod.IntegrateScreenshotExtensionsKey, defaultValue: true);
+
     private static T ReadOrDefault<T>(ModConfigurationKey<T> key, T defaultValue)
     {
         if (configuration != null && configuration.TryGetValue(key, out T? value) && value != null)

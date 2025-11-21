@@ -30,6 +30,16 @@ public class AnimatedPhotoExporterMod : ResoniteMod
         );
 
     [AutoRegisterConfigKey]
+    internal static readonly ModConfigurationKey<bool> IntegrateScreenshotExtensionsKey =
+        new(
+            "IntegrateScreenshotExtensions",
+            "Embed ScreenshotExtensions metadata into exported files when that mod is present",
+            () => true,
+            false,
+            null
+        );
+
+    [AutoRegisterConfigKey]
     internal static readonly ModConfigurationKey<bool> ExportGifKey =
         new(
             "ExportGif",
