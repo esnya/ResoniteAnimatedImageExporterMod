@@ -1,4 +1,3 @@
-using AnimatedPhotoExporter.Configuration;
 using AnimatedPhotoExporter.Services;
 using FrooxEngine;
 using HarmonyLib;
@@ -14,12 +13,6 @@ internal static class PhotoMetadataSavePatch
     [HarmonyPatch(nameof(PhotoMetadata.NotifyOfScreenshot))]
     private static void AfterNotify(PhotoMetadata __instance, ref Task __result)
     {
-        if (!AnimatedPhotoExporterConfiguration.IsEnabled)
-        {
-            AnimatedPhotoExporterMod.Msg("Mod disabled; leaving screenshot flow untouched.");
-            return;
-        }
-
         // Only support mono screenshots; match base game behavior for this mod.
         if (__instance.Is360.Value || __instance.StereoLayout.Value != Elements.Core.StereoLayout.None)
         {

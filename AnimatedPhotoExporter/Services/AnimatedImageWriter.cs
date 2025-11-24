@@ -1,5 +1,6 @@
 using AnimatedPhotoExporter.Configuration;
 using Elements.Core;
+using System.Threading;
 using ImageMagick;
 using ImageMagick.Formats;
 
@@ -10,7 +11,110 @@ namespace AnimatedPhotoExporter.Services;
 
 internal static class AnimatedImageWriter
 {
-    static AnimatedImageWriter()
+    private static readonly Lock WriteGate = new();
+
+    private static readonly Lazy<PathPrimeResult> NativePathPrime = new(
+        PrimeNativeSearchPath,
+        LazyThreadSafetyMode.ExecutionAndPublication
+    );
+
+    internal static bool TryWrite(
+        AnimationMetadata animation,
+        AnimatedImageFormat format,
+        string outputPath,
+        string atlasPath,
+        out string? writtenPath,
+        out string? failureReason
+    )
+    {
+        ArgumentNullException.ThrowIfNull(animation);
+        writtenPath = null;
+        failureReason = null;
+
+        PathPrimeResult pathPrime = NativePathPrime.Value;
+        if (!pathPrime.Success && pathPrime.Error != null)
+        {
+            AnimatedPhotoExporterMod.Warn($"Magick.NET native search path may be incomplete: {pathPrime.Error}");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+
+        if (string.IsNullOrEmpty(atlasPath) || !File.Exists(atlasPath))
+        {
+            AnimatedPhotoExporterMod.Warn("Atlas asset path not resolved; ensure texture is fully loaded.");
+            failureReason = "Atlas asset path missing or not resolved.";
+            return false;
+        }
+
+        using (WriteGate.EnterScope())
+        {
+            using MagickImage atlas = new(atlasPath);
+            using MagickImageCollection collection = new();
+            int frames = Math.Max(1, animation.FrameCount);
+
+            int atlasFrames = Math.Max(1, animation.Atlas.Frames);
+            List<int> orderedAtlasIndices =
+            [
+                .. Enumerable
+                    .Range(0, atlasFrames)
+                    .Select(idx => (idx, uv: animation.Atlas.GetFrame(idx)))
+                    .OrderBy(t => t.uv.Min.y) // bottom to top (fix reversed row order)
+                    .ThenBy(t => t.uv.Min.x)  // left to right
+                    .Select(t => t.idx)
+            ];
+
+            float frameRate = animation.FrameRate <= 0 ? 30f : animation.FrameRate;
+            for (int i = 0; i < frames; i++)
+            {
+                int atlasIndex = orderedAtlasIndices[i % orderedAtlasIndices.Count]; // forward only, row-major top-down
+                BoundingBox2D uv = animation.Atlas.GetFrame(atlasIndex);
+                int width = Math.Max(1, (int)(uv.Size.x * atlas.Width));
+                int height = Math.Max(1, (int)(uv.Size.y * atlas.Height));
+                int x = (int)(uv.Min.x * atlas.Width);
+                int y = (int)(uv.Min.y * atlas.Height);
+
+                MagickGeometry geometry = new() { X = x, Y = y, Width = (uint)width, Height = (uint)height };
+
+                MagickImage frame = (MagickImage)atlas.CloneArea(geometry);
+                frame.Page = new MagickGeometry { Width = (uint)width, Height = (uint)height };
+                if (!AnimatedPhotoExporterConfiguration.WebpLossless)
+                {
+                    frame.Quality = (byte)Math.Clamp(AnimatedPhotoExporterConfiguration.WebpQuality, 1, 100);
+                }
+
+                int delayCentiseconds = (int)Math.Max(1, Math.Round(100f / frameRate));
+                frame.AnimationDelay = (ushort)delayCentiseconds;
+                frame.AnimationIterations = ushort.MinValue; // loop forever
+                collection.Add(frame);
+            }
+
+            switch (format)
+            {
+                case AnimatedImageFormat.WebP:
+                    WebPWriteDefines defines = new()
+                    {
+                        Lossless = AnimatedPhotoExporterConfiguration.WebpLossless,
+                        Method = Math.Clamp(AnimatedPhotoExporterConfiguration.WebpMethod, 0, 6)
+                    };
+                    collection.Write(outputPath, defines);
+                    break;
+                case AnimatedImageFormat.Mng:
+                    collection.Write(outputPath, MagickFormat.Mng);
+                    break;
+                case AnimatedImageFormat.Gif:
+                    collection.Write(outputPath, MagickFormat.Gif);
+                    break;
+                default:
+                    AnimatedPhotoExporterMod.Warn($"Unsupported animated format {format}.");
+                    failureReason = $"Unsupported animated format {format}.";
+                    return false;
+            }
+            writtenPath = outputPath;
+            return true;
+        }
+    }
+
+    private static PathPrimeResult PrimeNativeSearchPath()
     {
         try
         {
@@ -53,94 +157,14 @@ internal static class AnimatedImageWriter
                     string.Join(Path.PathSeparator, additions) + Path.PathSeparator + currentPath
                 );
             }
+
+            return new PathPrimeResult(true, additions, null);
         }
         catch (Exception ex)
         {
-            AnimatedPhotoExporterMod.Warn($"Failed to prime native search path for Magick.NET: {ex}");
+            return new PathPrimeResult(false, Array.Empty<string>(), ex);
         }
     }
 
-    internal static bool TryWrite(
-        AnimationMetadata animation,
-        AnimatedImageFormat format,
-        string outputPath,
-        string atlasPath,
-        out string? writtenPath
-    )
-    {
-        ArgumentNullException.ThrowIfNull(animation);
-        writtenPath = null;
-
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
-
-        if (string.IsNullOrEmpty(atlasPath) || !File.Exists(atlasPath))
-        {
-            AnimatedPhotoExporterMod.Warn("Atlas asset path not resolved; ensure texture is fully loaded.");
-            return false;
-        }
-
-        using MagickImage atlas = new(atlasPath);
-        using MagickImageCollection collection = new();
-        int frames = Math.Max(1, animation.FrameCount);
-
-        int atlasFrames = Math.Max(1, animation.Atlas.Frames);
-        List<int> orderedAtlasIndices =
-        [
-            .. Enumerable
-                .Range(0, atlasFrames)
-                .Select(idx => (idx, uv: animation.Atlas.GetFrame(idx)))
-                .OrderBy(t => t.uv.Min.y) // bottom to top (fix reversed row order)
-                .ThenBy(t => t.uv.Min.x)  // left to right
-                .Select(t => t.idx)
-        ];
-
-        float frameRate = animation.FrameRate <= 0 ? 30f : animation.FrameRate;
-        for (int i = 0; i < frames; i++)
-        {
-            int atlasIndex = orderedAtlasIndices[i % orderedAtlasIndices.Count]; // forward only, row-major top-down
-            BoundingBox2D uv = animation.Atlas.GetFrame(atlasIndex);
-            int width = Math.Max(1, (int)(uv.Size.x * atlas.Width));
-            int height = Math.Max(1, (int)(uv.Size.y * atlas.Height));
-            int x = (int)(uv.Min.x * atlas.Width);
-            int y = (int)(uv.Min.y * atlas.Height);
-
-            MagickGeometry geometry = new() { X = x, Y = y, Width = (uint)width, Height = (uint)height };
-
-            MagickImage frame = (MagickImage)atlas.CloneArea(geometry);
-            frame.Page = new MagickGeometry { Width = (uint)width, Height = (uint)height };
-            if (!AnimatedPhotoExporterConfiguration.WebpLossless)
-            {
-                frame.Quality = (byte)Math.Clamp(AnimatedPhotoExporterConfiguration.WebpQuality, 1, 100);
-            }
-
-            int delayCentiseconds = (int)Math.Max(1, Math.Round(100f / frameRate));
-            frame.AnimationDelay = (ushort)delayCentiseconds;
-            frame.AnimationIterations = ushort.MinValue; // loop forever
-            collection.Add(frame);
-        }
-
-        switch (format)
-        {
-            case AnimatedImageFormat.WebP:
-                WebPWriteDefines defines = new()
-                {
-                    Lossless = AnimatedPhotoExporterConfiguration.WebpLossless,
-                    Method = Math.Clamp(AnimatedPhotoExporterConfiguration.WebpMethod, 0, 6)
-                };
-                collection.Write(outputPath, defines);
-                break;
-            case AnimatedImageFormat.Mng:
-                collection.Write(outputPath, MagickFormat.Mng);
-                break;
-            case AnimatedImageFormat.Gif:
-                collection.Write(outputPath, MagickFormat.Gif);
-                break;
-            default:
-                AnimatedPhotoExporterMod.Warn($"Unsupported animated format {format}.");
-                return false;
-        }
-        writtenPath = outputPath;
-        return true;
-    }
-
+    private sealed record PathPrimeResult(bool Success, IReadOnlyCollection<string> AddedPaths, Exception? Error);
 }

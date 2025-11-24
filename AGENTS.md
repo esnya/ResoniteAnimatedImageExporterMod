@@ -10,6 +10,12 @@
 6. **Data model constraints:** Template examples must stick to existing FrooxEngine data-model constructs; do not introduce new sync types or delegates in boilerplate code.
 7. **Design notes ban:** Avoid ad-hoc design docs. Keep intent obvious in code, commits, and this file.
 
+### Testing policy (lightweight)
+
+- Prefer small, maintainable tests that exercise real code paths without introducing stub assemblies for Resonite/Harmony/Magick. If validating a scenario would need heavy stubbing, skip the test and instead keep the production change simple, glanceable, and quasi-functional so it stays testable later without scaffolding.
+- External mod integration (e.g., ScreenshotExtensions) relies on capability checks; only add unit tests when they run without custom stubs. Otherwise depend on runtime/CI smoke in Resonite.
+- Keep the base ritual (format → build → test) but avoid brittle/high-setup tests that trade maintainability for nominal coverage.
+
 ## Task Completion Ritual
 
 Before calling any change “done,” run and fix the following in order (pass `-p:ResonitePath=...` if auto-detect fails):

@@ -1,10 +1,10 @@
 using System.Globalization;
-using System.Reflection;
 using AnimatedPhotoExporter.Configuration;
 using FrooxEngine;
 #if DEBUG
 using System.Diagnostics;
 #endif
+using System.Threading;
 
 #pragma warning disable IDE0002 // Keep explicit type and namespace usage for clarity in mod logs
 
@@ -12,15 +12,23 @@ namespace AnimatedPhotoExporter.Services;
 
 internal static class AnimatedPhotoSaver
 {
+    private static readonly TimeSpan TextureLoadTimeout = TimeSpan.FromSeconds(30);
+
     internal static Task SaveAnimatedPhotoAsync(
         PhotoMetadata metadata,
-        AnimationMetadata animation
+        AnimationMetadata animation,
+        CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(animation);
 
-        StaticTexture2D? texture = animation.Texture;
+        if (animation.Texture is not StaticTexture2D texture)
+        {
+            AnimatedPhotoExporterMod.Warn("Texture missing; cannot export animated photo.");
+            return Task.CompletedTask;
+        }
+
         Uri? url = texture.URL.Value;
         Engine engine = metadata.Engine;
         DateTime timeTaken = metadata.TimeTaken.Value.ToLocalTime();
@@ -28,9 +36,9 @@ internal static class AnimatedPhotoSaver
         Stopwatch total = Stopwatch.StartNew();
         Stopwatch gather = Stopwatch.StartNew();
 #endif
-        if (texture == null || url == null)
+        if (url == null)
         {
-            AnimatedPhotoExporterMod.Warn("Texture or slot missing; cannot export.");
+            AnimatedPhotoExporterMod.Warn("Texture URL missing; cannot export animated photo.");
             return Task.CompletedTask;
         }
 
@@ -38,26 +46,45 @@ internal static class AnimatedPhotoSaver
         {
             try
             {
-                string? atlasPath = await engine.AssetManager.GatherAssetFile(url, 100f).ConfigureAwait(false);
+                (bool atlasSuccess, string? atlasPath, string? atlasFailure) = await ResolveAtlasPathAsync(
+                    engine,
+                    url,
+                    cancellationToken
+                ).ConfigureAwait(false);
 #if DEBUG
                 gather.Stop();
 #endif
-                if (string.IsNullOrEmpty(atlasPath))
+                if (!atlasSuccess || string.IsNullOrEmpty(atlasPath))
                 {
-                    AnimatedPhotoExporterMod.Warn("Failed to gather atlas file for animated photo.");
+                    AnimatedPhotoExporterMod.Warn(
+                        $"Failed to gather atlas file for animated photo: {atlasFailure ?? "unknown reason"}."
+                    );
                     return;
                 }
 
 #if DEBUG
                 Stopwatch wait = Stopwatch.StartNew();
 #endif
-                while (texture.Asset == null || texture.Asset.LoadState != AssetLoadState.FullyLoaded)
-                {
-                    await default(NextUpdate);
-                }
+                (TextureLoadOutcome outcome, AssetLoadState? loadState) = await WaitForTextureLoadAsync(
+                    texture,
+                    TextureLoadTimeout,
+                    cancellationToken
+                ).ConfigureAwait(false);
 #if DEBUG
                 wait.Stop();
 #endif
+                if (outcome != TextureLoadOutcome.Loaded)
+                {
+                    string detail =
+                        outcome switch
+                        {
+                            TextureLoadOutcome.TimedOut => $"timed out after {TextureLoadTimeout.TotalSeconds:F0}s",
+                            TextureLoadOutcome.Cancelled => "cancelled",
+                            _ => $"asset load state {loadState?.ToString() ?? "unknown"}"
+                        };
+                    AnimatedPhotoExporterMod.Warn($"Animated photo export aborted: texture {detail}.");
+                    return;
+                }
 
                 AnimatedImageFormat format = AnimatedPhotoExporterConfiguration.Format;
                 bool exportGif = AnimatedPhotoExporterConfiguration.ExportGif;
@@ -109,13 +136,13 @@ internal static class AnimatedPhotoSaver
             Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
             string.IsNullOrWhiteSpace(platformName) ? "Resonite" : platformName
         );
-        if (AnimatedPhotoExporterConfiguration.IntegrateScreenshotExtensions && IsScreenshotExtensionsPresent())
+        if (
+            AnimatedPhotoExporterConfiguration.IntegrateScreenshotExtensions &&
+            ScreenshotExtensionsIntegration.IsPresent &&
+            ScreenshotExtensionsIntegration.ShouldDigByMonth
+        )
         {
-            bool dig = TryReadScreenshotExtensionsBool("DigFolderWhenSavingKey") ?? true; // mod default is true
-            if (dig)
-            {
-                root = Path.Combine(root, timeTaken.ToString("yyyy-MM", CultureInfo.InvariantCulture));
-            }
+            root = Path.Combine(root, timeTaken.ToString("yyyy-MM", CultureInfo.InvariantCulture));
         }
         Directory.CreateDirectory(root);
 
@@ -142,6 +169,28 @@ internal static class AnimatedPhotoSaver
         };
     }
 
+    private static async Task<(bool Success, string? AtlasPath, string? FailureReason)> ResolveAtlasPathAsync(
+        Engine engine,
+        Uri url,
+        CancellationToken cancellationToken
+    )
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return (false, null, "cancelled");
+        }
+
+        string? atlasPath = await engine.AssetManager.GatherAssetFile(url, 100f).ConfigureAwait(false);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return (false, null, "cancelled");
+        }
+
+        return string.IsNullOrEmpty(atlasPath)
+            ? (false, null, "AssetManager returned no path")
+            : (true, atlasPath, null);
+    }
+
     private static void WriteIfPossible(
         PhotoMetadata metadata,
         AnimationMetadata animation,
@@ -159,7 +208,7 @@ internal static class AnimatedPhotoSaver
 #if DEBUG
         Stopwatch write = Stopwatch.StartNew();
 #endif
-        if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written) &&
+        if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written, out string? failureReason) &&
             !string.IsNullOrEmpty(written))
         {
 #if DEBUG
@@ -172,7 +221,15 @@ internal static class AnimatedPhotoSaver
 #else
             AnimatedPhotoExporterMod.Msg($"Animated photo saved to {written}.");
 #endif
-            TryIntegrateWithScreenshotExtensions(metadata, written);
+            ScreenshotExtensionsIntegration.TryEmbed(metadata, written);
+        }
+        else if (!string.IsNullOrEmpty(failureReason))
+        {
+            AnimatedPhotoExporterMod.Warn($"Animated photo write failed for {outputPath}: {failureReason}");
+        }
+        else
+        {
+            AnimatedPhotoExporterMod.Warn($"Animated photo write failed for {outputPath}: unknown reason.");
         }
     }
 
@@ -192,97 +249,46 @@ internal static class AnimatedPhotoSaver
         }
     }
 
-    private static void TryIntegrateWithScreenshotExtensions(PhotoMetadata metadata, string outputPath)
+    private static async Task<(TextureLoadOutcome Outcome, AssetLoadState? LoadState)> WaitForTextureLoadAsync(
+        StaticTexture2D texture,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
     {
-        if (!AnimatedPhotoExporterConfiguration.IntegrateScreenshotExtensions)
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+        while (true)
         {
-            return;
-        }
-
-        // Only run when the companion mod is present and its dependencies exist.
-        Type? metadataType = Type.GetType("ResoniteScreenshotExtensions.Metadata, ResoniteScreenshotExtensions");
-        Type? xmpType = Type.GetType("ResoniteScreenshotExtensions.XmpMetadata, ResoniteScreenshotExtensions");
-        Type? bitmapType = Type.GetType("FreeImageAPI.FreeImageBitmap, FreeImageNET")
-            ?? Type.GetType("FreeImageAPI.FreeImageBitmap, FreeImageAPI");
-
-        if (metadataType == null || xmpType == null || bitmapType == null)
-        {
-            return;
-        }
-
-        try
-        {
-            object rseMetadata = Activator.CreateInstance(metadataType, metadata)!;
-            object bitmap = Activator.CreateInstance(bitmapType, outputPath)!;
-            try
+            Asset? asset = texture.Asset;
+            AssetLoadState? state = asset?.LoadState;
+            if (state == AssetLoadState.FullyLoaded)
             {
-                Type[] signature = [bitmapType, metadataType];
-                object[] args = [bitmap, rseMetadata];
-                MethodInfo? upsert = xmpType.GetMethod(
-                    "UpsertPhotoMetadata",
-                    BindingFlags.Public | BindingFlags.Static,
-                    null,
-                    signature,
-                    null
-                );
-                upsert?.Invoke(null, args);
+                return (TextureLoadOutcome.Loaded, state);
             }
-            finally
+
+            if (state == AssetLoadState.Failed)
             {
-                (bitmap as IDisposable)?.Dispose();
+                return (TextureLoadOutcome.Failed, state);
             }
-        }
-        catch (Exception ex)
-        {
-            AnimatedPhotoExporterMod.Warn($"ScreenshotExtensions integration failed for {outputPath}: {ex}");
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                return (TextureLoadOutcome.TimedOut, state);
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return (TextureLoadOutcome.Cancelled, state);
+            }
+
+            await default(NextUpdate);
         }
     }
 
-    private static bool IsScreenshotExtensionsPresent()
+    private enum TextureLoadOutcome
     {
-        return Type.GetType("ResoniteScreenshotExtensions.ResoniteScreenshotExtensions, ResoniteScreenshotExtensions") != null;
-    }
-
-    private static bool? TryReadScreenshotExtensionsBool(string keyFieldName)
-    {
-        try
-        {
-            Type? rseType = Type.GetType("ResoniteScreenshotExtensions.ResoniteScreenshotExtensions, ResoniteScreenshotExtensions");
-            if (rseType == null)
-            {
-                return null;
-            }
-
-            FieldInfo? configField = rseType.GetField("_config", BindingFlags.NonPublic | BindingFlags.Static);
-            object? config = configField?.GetValue(null);
-            if (config == null)
-            {
-                return null;
-            }
-
-            FieldInfo? keyField = rseType.GetField(keyFieldName, BindingFlags.Public | BindingFlags.Static);
-            object? keyInstance = keyField?.GetValue(null);
-            if (keyInstance == null)
-            {
-                return null;
-            }
-
-            MethodInfo? getValue = config
-                .GetType()
-                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(m => m.Name == "GetValue" && m.GetParameters().Length == 1);
-            if (getValue == null)
-            {
-                return null;
-            }
-
-            object[] args = [keyInstance];
-            object? result = getValue.Invoke(config, args);
-            return result as bool?;
-        }
-        catch
-        {
-            return null;
-        }
+        Loaded,
+        Failed,
+        TimedOut,
+        Cancelled
     }
 }

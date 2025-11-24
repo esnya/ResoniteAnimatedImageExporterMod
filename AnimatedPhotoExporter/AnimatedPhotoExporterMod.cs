@@ -1,5 +1,6 @@
 using System.Reflection;
 using AnimatedPhotoExporter.Configuration;
+using AnimatedPhotoExporter.Services;
 using HarmonyLib;
 using ResoniteModLoader;
 #if USE_RESONITE_HOT_RELOAD_LIB
@@ -14,6 +15,8 @@ public class AnimatedPhotoExporterMod : ResoniteMod
     private static readonly Assembly Assembly = typeof(AnimatedPhotoExporterMod).Assembly;
     private static readonly string HarmonyId = $"com.nekometer.esnya.{Assembly.GetName().Name}";
     private static readonly Harmony Harmony = new(HarmonyId);
+    private static ModConfiguration? configuration;
+    private static bool patchesApplied;
 
     [AutoRegisterConfigKey]
     internal static readonly ModConfigurationKey<bool> EnabledKey =
@@ -105,7 +108,7 @@ public class AnimatedPhotoExporterMod : ResoniteMod
     /// <inheritdoc />
     public override void OnEngineInit()
     {
-        ModConfiguration? configuration = GetConfiguration();
+        configuration = GetConfiguration();
 
         // Some RML builds return null until a config file exists. Use defaults in that case.
         if (configuration == null)
@@ -114,6 +117,7 @@ public class AnimatedPhotoExporterMod : ResoniteMod
         }
 
         AnimatedPhotoExporterConfiguration.Initialize(configuration);
+        RegisterConfigurationWatch(configuration);
         InitializeMod(this);
     }
 
@@ -122,6 +126,7 @@ public class AnimatedPhotoExporterMod : ResoniteMod
     public static void BeforeHotReload()
     {
         Harmony.UnpatchAll(HarmonyId);
+        patchesApplied = false;
     }
 
     /// <summary>Reapplies Harmony patches after hot reload.</summary>
@@ -130,8 +135,9 @@ public class AnimatedPhotoExporterMod : ResoniteMod
     {
         ArgumentNullException.ThrowIfNull(mod);
 
-        ModConfiguration? configuration = mod.GetConfiguration();
+        configuration = mod.GetConfiguration();
         AnimatedPhotoExporterConfiguration.Initialize(configuration);
+        RegisterConfigurationWatch(configuration);
 
         InitializeMod(mod);
     }
@@ -143,6 +149,48 @@ public class AnimatedPhotoExporterMod : ResoniteMod
 #if USE_RESONITE_HOT_RELOAD_LIB
         HotReloader.RegisterForHotReload(mod);
 #endif
-        Harmony.PatchAll();
+        ScreenshotExtensionsIntegration.Refresh();
+        RefreshPatchState();
+    }
+
+    private static void RegisterConfigurationWatch(ModConfiguration? config)
+    {
+        if (config == null)
+        {
+            return;
+        }
+
+        config.OnThisConfigurationChanged -= OnConfigurationChanged;
+        config.OnThisConfigurationChanged += OnConfigurationChanged;
+    }
+
+    private static void OnConfigurationChanged(ConfigurationChangedEvent change)
+    {
+        if (change.Key.Name == EnabledKey.Name)
+        {
+            RefreshPatchState();
+        }
+
+        if (change.Key.Name == IntegrateScreenshotExtensionsKey.Name)
+        {
+            ScreenshotExtensionsIntegration.Refresh();
+        }
+    }
+
+    private static void RefreshPatchState()
+    {
+        bool enabled = AnimatedPhotoExporterConfiguration.IsEnabled;
+        if (enabled && !patchesApplied)
+        {
+            Harmony.PatchAll();
+            patchesApplied = true;
+            return;
+        }
+
+        if (!enabled && patchesApplied)
+        {
+            Harmony.UnpatchAll(HarmonyId);
+            patchesApplied = false;
+        }
     }
 }
