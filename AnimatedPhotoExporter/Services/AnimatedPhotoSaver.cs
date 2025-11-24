@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Globalization;
 using AnimatedPhotoExporter.Configuration;
 using FrooxEngine;
@@ -13,6 +14,22 @@ namespace AnimatedPhotoExporter.Services;
 internal static class AnimatedPhotoSaver
 {
     private static readonly TimeSpan TextureLoadTimeout = TimeSpan.FromSeconds(30);
+
+    private sealed record SaveTarget(AnimatedImageFormat Format, string Path);
+
+    private sealed record SaveResult(
+        SaveTarget Target,
+        bool Success,
+        string? WrittenPath,
+        string? FailureReason,
+        double? GatherSeconds = null,
+        double? WaitSeconds = null,
+        double? EncodeSeconds = null,
+        double? TotalSeconds = null,
+        int FrameCount = 0,
+        float FrameRate = 0,
+        int AtlasFrames = 0
+    );
 
     internal static Task SaveAnimatedPhotoAsync(
         PhotoMetadata metadata,
@@ -46,6 +63,8 @@ internal static class AnimatedPhotoSaver
         {
             try
             {
+                AnimatedImageWriter.EnsureNativePathPrimed();
+
                 (bool atlasSuccess, string? atlasPath, string? atlasFailure) = await ResolveAtlasPathAsync(
                     engine,
                     url,
@@ -90,30 +109,13 @@ internal static class AnimatedPhotoSaver
                 bool exportGif = AnimatedPhotoExporterConfiguration.ExportGif;
                 string platformName = ResolvePlatformName(engine);
 
-                string primaryPath = BuildDiskPath(platformName, timeTaken, GetExtension(format));
-                WriteIfPossible(
-                    metadata,
-                    animation,
-                    format,
-                    primaryPath,
-                    atlasPath
-#if DEBUG
-                    ,
-                    total,
-                    gather,
-                    wait
-#endif
-                );
-
-                if (exportGif && format != AnimatedImageFormat.Gif)
+                foreach (SaveTarget target in EnumerateOutputs(platformName, timeTaken, format, exportGif))
                 {
-                    string gifPath = BuildDiskPath(platformName, timeTaken, ".gif");
-                    WriteIfPossible(
+                    SaveResult result = WriteOutput(
                         metadata,
                         animation,
-                        AnimatedImageFormat.Gif,
-                        gifPath,
-                        atlasPath
+                        atlasPath,
+                        target
 #if DEBUG
                         ,
                         total,
@@ -121,6 +123,7 @@ internal static class AnimatedPhotoSaver
                         wait
 #endif
                     );
+                    Report(result);
                 }
             }
             catch (Exception ex)
@@ -169,6 +172,21 @@ internal static class AnimatedPhotoSaver
         };
     }
 
+    private static IEnumerable<SaveTarget> EnumerateOutputs(
+        string platformName,
+        DateTime timeTaken,
+        AnimatedImageFormat primaryFormat,
+        bool exportGif
+    )
+    {
+        yield return new SaveTarget(primaryFormat, BuildDiskPath(platformName, timeTaken, GetExtension(primaryFormat)));
+
+        if (exportGif && primaryFormat != AnimatedImageFormat.Gif)
+        {
+            yield return new SaveTarget(AnimatedImageFormat.Gif, BuildDiskPath(platformName, timeTaken, ".gif"));
+        }
+    }
+
     private static async Task<(bool Success, string? AtlasPath, string? FailureReason)> ResolveAtlasPathAsync(
         Engine engine,
         Uri url,
@@ -191,12 +209,11 @@ internal static class AnimatedPhotoSaver
             : (true, atlasPath, null);
     }
 
-    private static void WriteIfPossible(
+    private static SaveResult WriteOutput(
         PhotoMetadata metadata,
         AnimationMetadata animation,
-        AnimatedImageFormat format,
-        string outputPath,
-        string atlasPath
+        string atlasPath,
+        SaveTarget target
 #if DEBUG
         ,
         Stopwatch total,
@@ -208,29 +225,53 @@ internal static class AnimatedPhotoSaver
 #if DEBUG
         Stopwatch write = Stopwatch.StartNew();
 #endif
-        if (AnimatedImageWriter.TryWrite(animation, format, outputPath, atlasPath, out string? written, out string? failureReason) &&
-            !string.IsNullOrEmpty(written))
+        bool success = AnimatedImageWriter.TryWrite(animation, target.Format, target.Path, atlasPath, out string? written, out string? failureReason) &&
+            !string.IsNullOrEmpty(written);
+#if DEBUG
+        write.Stop();
+#endif
+
+        if (success)
+        {
+            ScreenshotExtensionsIntegration.TryEmbed(metadata, written!);
+        }
+
+        return new SaveResult(
+            target,
+            success,
+            written,
+            failureReason
+#if DEBUG
+            ,
+            gather.Elapsed.TotalSeconds,
+            wait.Elapsed.TotalSeconds,
+            write.Elapsed.TotalSeconds,
+            total.Elapsed.TotalSeconds,
+            animation.FrameCount,
+            animation.FrameRate,
+            animation.Atlas.Frames
+#endif
+        );
+    }
+
+    private static void Report(SaveResult result)
+    {
+        if (result.Success && !string.IsNullOrEmpty(result.WrittenPath))
         {
 #if DEBUG
-            write.Stop();
             AnimatedPhotoExporterMod.Msg(
-                $"Animated photo saved to {written}. " +
-                $"Gather {gather.Elapsed.TotalSeconds:F2}s Wait {wait.Elapsed.TotalSeconds:F2}s Encode {write.Elapsed.TotalSeconds:F2}s Total {total.Elapsed.TotalSeconds:F2}s " +
-                $"Frames {animation.FrameCount} Rate {animation.FrameRate:F1} AtlasFrames {animation.Atlas.Frames}"
+                $"Animated photo saved to {result.WrittenPath}. " +
+                $"Gather {result.GatherSeconds.GetValueOrDefault():F2}s Wait {result.WaitSeconds.GetValueOrDefault():F2}s Encode {result.EncodeSeconds.GetValueOrDefault():F2}s Total {result.TotalSeconds.GetValueOrDefault():F2}s " +
+                $"Frames {result.FrameCount} Rate {result.FrameRate:F1} AtlasFrames {result.AtlasFrames}"
             );
 #else
-            AnimatedPhotoExporterMod.Msg($"Animated photo saved to {written}.");
+            AnimatedPhotoExporterMod.Msg($"Animated photo saved to {result.WrittenPath}.");
 #endif
-            ScreenshotExtensionsIntegration.TryEmbed(metadata, written);
+            return;
         }
-        else if (!string.IsNullOrEmpty(failureReason))
-        {
-            AnimatedPhotoExporterMod.Warn($"Animated photo write failed for {outputPath}: {failureReason}");
-        }
-        else
-        {
-            AnimatedPhotoExporterMod.Warn($"Animated photo write failed for {outputPath}: unknown reason.");
-        }
+
+        string reason = string.IsNullOrEmpty(result.FailureReason) ? "unknown reason" : result.FailureReason!;
+        AnimatedPhotoExporterMod.Warn($"Animated photo write failed for {result.Target.Path}: {reason}");
     }
 
     private static string ResolvePlatformName(Engine engine)

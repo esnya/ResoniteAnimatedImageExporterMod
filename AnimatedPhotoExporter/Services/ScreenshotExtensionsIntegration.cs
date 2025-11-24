@@ -23,9 +23,23 @@ internal static class ScreenshotExtensionsIntegration
 
     private static IntegrationSnapshot snapshot = NotPresent;
 
-    internal static bool IsPresent => snapshot.IsPresent;
+    internal static bool IsPresent
+    {
+        get
+        {
+            EnsureSnapshotInitialized();
+            return snapshot.IsPresent;
+        }
+    }
 
-    internal static bool ShouldDigByMonth => snapshot.IsPresent && snapshot.DigPreference;
+    internal static bool ShouldDigByMonth
+    {
+        get
+        {
+            EnsureSnapshotInitialized();
+            return snapshot.IsPresent && snapshot.DigPreference;
+        }
+    }
 
     internal static void Refresh()
     {
@@ -33,8 +47,18 @@ internal static class ScreenshotExtensionsIntegration
         Interlocked.Exchange(ref snapshot, next);
     }
 
+    private static void EnsureSnapshotInitialized()
+    {
+        if (ReferenceEquals(snapshot, NotPresent))
+        {
+            Refresh();
+        }
+    }
+
     internal static void TryEmbed(PhotoMetadata metadata, string outputPath)
     {
+        EnsureSnapshotInitialized();
+
         IntegrationSnapshot local = snapshot;
         if (
             !AnimatedPhotoExporterConfiguration.IntegrateScreenshotExtensions ||
