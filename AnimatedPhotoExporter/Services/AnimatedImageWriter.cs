@@ -1,8 +1,5 @@
 using AnimatedPhotoExporter.Configuration;
 using Elements.Core;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
 using ImageMagick;
 using ImageMagick.Formats;
 
@@ -15,7 +12,7 @@ internal static class AnimatedImageWriter
 {
     private static readonly Lock WriteGate = new();
 
-    private static readonly Lazy<PathPrimeResult> NativePathPrime = new(PrimeNativeSearchPath, LazyThreadSafetyMode.ExecutionAndPublication);
+    private static readonly Lazy<bool> NativePathPrimed = new(PrimeNativeSearchPath, LazyThreadSafetyMode.ExecutionAndPublication);
 
     internal static bool TryWrite(
         AnimationMetadata animation,
@@ -88,10 +85,9 @@ internal static class AnimatedImageWriter
 
     internal static void EnsureNativePathPrimed()
     {
-        PathPrimeResult pathPrime = NativePathPrime.Value;
-        if (!pathPrime.Success && pathPrime.Error != null)
+        if (!NativePathPrimed.Value)
         {
-            AnimatedPhotoExporterMod.Warn($"Magick.NET native search path may be incomplete: {pathPrime.Error}");
+            AnimatedPhotoExporterMod.Warn("Magick.NET native directory could not be added to PATH; relying on process defaults.");
         }
     }
 
@@ -128,57 +124,39 @@ internal static class AnimatedImageWriter
         return frame;
     }
 
-    private static PathPrimeResult PrimeNativeSearchPath()
+    private static bool PrimeNativeSearchPath()
     {
         try
         {
-            string? managedDir = Path.GetDirectoryName(typeof(MagickImage).Assembly.Location);
             string? modDir = Path.GetDirectoryName(typeof(AnimatedImageWriter).Assembly.Location);
+            if (string.IsNullOrEmpty(modDir))
+            {
+                return false;
+            }
 
-            IEnumerable<string?> candidateDirs =
-            [
-                managedDir,
-                modDir,
-                managedDir != null ? Path.Combine(managedDir, "runtimes", "win-x64", "native") : null,
-                modDir != null ? Path.Combine(modDir, "runtimes", "win-x64", "native") : null,
-            ];
+            string nativeDir = Path.Combine(modDir, "runtimes", "win-x64", "native");
+            string targetDir = Directory.Exists(nativeDir) ? nativeDir : modDir;
+            if (!Directory.Exists(targetDir))
+            {
+                return false;
+            }
 
             string currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-            HashSet<string> existing = currentPath
-                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-                .Select(Path.GetFullPath)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            List<string> additions = new();
-            foreach (string? dir in candidateDirs)
+            string[] segments = currentPath.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Any(segment => string.Equals(segment, targetDir, StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
-                {
-                    continue;
-                }
-
-                string full = Path.GetFullPath(dir);
-                if (existing.Add(full))
-                {
-                    additions.Add(full);
-                }
+                return true;
             }
 
-            if (additions.Count > 0)
-            {
-                Environment.SetEnvironmentVariable(
-                    "PATH",
-                    string.Join(Path.PathSeparator, additions) + Path.PathSeparator + currentPath
-                );
-            }
-
-            return new PathPrimeResult(true, additions, null);
+            string combined = string.IsNullOrEmpty(currentPath)
+                ? targetDir
+                : $"{targetDir}{Path.PathSeparator}{currentPath}";
+            Environment.SetEnvironmentVariable("PATH", combined);
+            return true;
         }
-        catch (Exception ex)
+        catch
         {
-            return new PathPrimeResult(false, Array.Empty<string>(), ex);
+            return false;
         }
     }
-
-    private sealed record PathPrimeResult(bool Success, IReadOnlyCollection<string> AddedPaths, Exception? Error);
 }

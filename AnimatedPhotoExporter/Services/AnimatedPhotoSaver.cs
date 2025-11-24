@@ -1,11 +1,7 @@
-using System.Collections.Generic;
 using System.Globalization;
+
 using AnimatedPhotoExporter.Configuration;
 using FrooxEngine;
-#if DEBUG
-using System.Diagnostics;
-#endif
-using System.Threading;
 
 #pragma warning disable IDE0002 // Keep explicit type and namespace usage for clarity in mod logs
 
@@ -16,20 +12,6 @@ internal static class AnimatedPhotoSaver
     private static readonly TimeSpan TextureLoadTimeout = TimeSpan.FromSeconds(30);
 
     private sealed record SaveTarget(AnimatedImageFormat Format, string Path);
-
-    private sealed record SaveResult(
-        SaveTarget Target,
-        bool Success,
-        string? WrittenPath,
-        string? FailureReason,
-        double? GatherSeconds = null,
-        double? WaitSeconds = null,
-        double? EncodeSeconds = null,
-        double? TotalSeconds = null,
-        int FrameCount = 0,
-        float FrameRate = 0,
-        int AtlasFrames = 0
-    );
 
     internal static Task SaveAnimatedPhotoAsync(
         PhotoMetadata metadata,
@@ -49,10 +31,6 @@ internal static class AnimatedPhotoSaver
         Uri? url = texture.URL.Value;
         Engine engine = metadata.Engine;
         DateTime timeTaken = metadata.TimeTaken.Value.ToLocalTime();
-#if DEBUG
-        Stopwatch total = Stopwatch.StartNew();
-        Stopwatch gather = Stopwatch.StartNew();
-#endif
         if (url == null)
         {
             AnimatedPhotoExporterMod.Warn("Texture URL missing; cannot export animated photo.");
@@ -70,9 +48,6 @@ internal static class AnimatedPhotoSaver
                     url,
                     cancellationToken
                 ).ConfigureAwait(false);
-#if DEBUG
-                gather.Stop();
-#endif
                 if (!atlasSuccess || string.IsNullOrEmpty(atlasPath))
                 {
                     AnimatedPhotoExporterMod.Warn(
@@ -81,26 +56,21 @@ internal static class AnimatedPhotoSaver
                     return;
                 }
 
-#if DEBUG
-                Stopwatch wait = Stopwatch.StartNew();
-#endif
                 (TextureLoadOutcome outcome, AssetLoadState? loadState) = await WaitForTextureLoadAsync(
                     texture,
                     TextureLoadTimeout,
                     cancellationToken
                 ).ConfigureAwait(false);
-#if DEBUG
-                wait.Stop();
-#endif
                 if (outcome != TextureLoadOutcome.Loaded)
                 {
-                    string detail =
-                        outcome switch
-                        {
-                            TextureLoadOutcome.TimedOut => $"timed out after {TextureLoadTimeout.TotalSeconds:F0}s",
-                            TextureLoadOutcome.Cancelled => "cancelled",
-                            _ => $"asset load state {loadState?.ToString() ?? "unknown"}"
-                        };
+                    string detail = outcome switch
+                    {
+                        TextureLoadOutcome.TimedOut => $"timed out after {TextureLoadTimeout.TotalSeconds:F0}s",
+                        TextureLoadOutcome.Cancelled => "cancelled",
+                        TextureLoadOutcome.Failed => $"asset load state {loadState?.ToString() ?? "unknown"}",
+                        TextureLoadOutcome.Loaded => "unexpectedly reported loaded",
+                        _ => $"asset load state {loadState?.ToString() ?? "unknown"}"
+                    };
                     AnimatedPhotoExporterMod.Warn($"Animated photo export aborted: texture {detail}.");
                     return;
                 }
@@ -111,19 +81,12 @@ internal static class AnimatedPhotoSaver
 
                 foreach (SaveTarget target in EnumerateOutputs(platformName, timeTaken, format, exportGif))
                 {
-                    SaveResult result = WriteOutput(
+                    WriteOutput(
                         metadata,
                         animation,
                         atlasPath,
                         target
-#if DEBUG
-                        ,
-                        total,
-                        gather,
-                        wait
-#endif
                     );
-                    Report(result);
                 }
             }
             catch (Exception ex)
@@ -209,69 +172,33 @@ internal static class AnimatedPhotoSaver
             : (true, atlasPath, null);
     }
 
-    private static SaveResult WriteOutput(
+    private static void WriteOutput(
         PhotoMetadata metadata,
         AnimationMetadata animation,
         string atlasPath,
         SaveTarget target
-#if DEBUG
-        ,
-        Stopwatch total,
-        Stopwatch gather,
-        Stopwatch wait
-#endif
     )
     {
-#if DEBUG
-        Stopwatch write = Stopwatch.StartNew();
-#endif
-        bool success = AnimatedImageWriter.TryWrite(animation, target.Format, target.Path, atlasPath, out string? written, out string? failureReason) &&
-            !string.IsNullOrEmpty(written);
-#if DEBUG
-        write.Stop();
-#endif
+        bool success = AnimatedImageWriter.TryWrite(
+                animation,
+                target.Format,
+                target.Path,
+                atlasPath,
+                out string? written,
+                out string? failureReason
+            ) && !string.IsNullOrEmpty(written);
 
         if (success)
         {
             ScreenshotExtensionsIntegration.TryEmbed(metadata, written!);
-        }
-
-        return new SaveResult(
-            target,
-            success,
-            written,
-            failureReason
-#if DEBUG
-            ,
-            gather.Elapsed.TotalSeconds,
-            wait.Elapsed.TotalSeconds,
-            write.Elapsed.TotalSeconds,
-            total.Elapsed.TotalSeconds,
-            animation.FrameCount,
-            animation.FrameRate,
-            animation.Atlas.Frames
-#endif
-        );
-    }
-
-    private static void Report(SaveResult result)
-    {
-        if (result.Success && !string.IsNullOrEmpty(result.WrittenPath))
-        {
-#if DEBUG
             AnimatedPhotoExporterMod.Msg(
-                $"Animated photo saved to {result.WrittenPath}. " +
-                $"Gather {result.GatherSeconds.GetValueOrDefault():F2}s Wait {result.WaitSeconds.GetValueOrDefault():F2}s Encode {result.EncodeSeconds.GetValueOrDefault():F2}s Total {result.TotalSeconds.GetValueOrDefault():F2}s " +
-                $"Frames {result.FrameCount} Rate {result.FrameRate:F1} AtlasFrames {result.AtlasFrames}"
+                $"Animated photo saved ({target.Format}) -> {written}."
             );
-#else
-            AnimatedPhotoExporterMod.Msg($"Animated photo saved to {result.WrittenPath}.");
-#endif
             return;
         }
 
-        string reason = string.IsNullOrEmpty(result.FailureReason) ? "unknown reason" : result.FailureReason!;
-        AnimatedPhotoExporterMod.Warn($"Animated photo write failed for {result.Target.Path}: {reason}");
+        string reason = string.IsNullOrEmpty(failureReason) ? "unknown reason" : failureReason!;
+        AnimatedPhotoExporterMod.Warn($"Animated photo save failed for {target.Path}: {reason}");
     }
 
     private static string ResolvePlatformName(Engine engine)

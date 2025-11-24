@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Threading;
 using AnimatedPhotoExporter.Configuration;
 using FrooxEngine;
 
@@ -17,8 +16,8 @@ internal static class ScreenshotExtensionsIntegration
         null,
         null,
         null,
-        isPresent: false,
-        digPreference: true
+        IsPresent: false,
+        DigPreference: true
     );
 
     private static IntegrationSnapshot snapshot = NotPresent;
@@ -98,8 +97,6 @@ internal static class ScreenshotExtensionsIntegration
             ?? Type.GetType("FreeImageAPI.FreeImageBitmap, FreeImageAPI");
 
         bool isPresent = metadataType != null && xmpType != null && bitmapType != null;
-        MethodInfo? upsertMethod = null;
-        bool digPreference = true;
 
         if (!isPresent)
         {
@@ -107,7 +104,7 @@ internal static class ScreenshotExtensionsIntegration
         }
 
         Type[] signature = [bitmapType!, metadataType!];
-        upsertMethod = xmpType!.GetMethod(
+        MethodInfo? upsertMethod = xmpType!.GetMethod(
             "UpsertPhotoMetadata",
             BindingFlags.Public | BindingFlags.Static,
             null,
@@ -115,7 +112,7 @@ internal static class ScreenshotExtensionsIntegration
             null
         );
 
-        digPreference = TryReadScreenshotExtensionsBool("DigFolderWhenSavingKey") ?? true;
+        bool digPreference = TryReadScreenshotExtensionsBool("DigFolderWhenSavingKey") ?? true;
 
         return new IntegrationSnapshot(metadataType, xmpType, bitmapType, upsertMethod, isPresent, digPreference);
     }
