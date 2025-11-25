@@ -104,13 +104,7 @@ internal static class ScreenshotExtensionsIntegration
         }
 
         Type[] signature = [bitmapType!, metadataType!];
-        MethodInfo? upsertMethod = xmpType!.GetMethod(
-            "UpsertPhotoMetadata",
-            BindingFlags.Public | BindingFlags.Static,
-            null,
-            signature,
-            null
-        );
+        MethodInfo? upsertMethod = FindStaticMethod(xmpType!, "UpsertPhotoMetadata", signature);
 
         bool digPreference = TryReadScreenshotExtensionsBool("DigFolderWhenSavingKey") ?? true;
 
@@ -121,22 +115,26 @@ internal static class ScreenshotExtensionsIntegration
     {
         try
         {
-            Type? rseType = Type.GetType("ResoniteScreenshotExtensions.ResoniteScreenshotExtensions, ResoniteScreenshotExtensions");
-            if (rseType == null)
+            if (
+                Type.GetType("ResoniteScreenshotExtensions.ResoniteScreenshotExtensions, ResoniteScreenshotExtensions")
+                    is not Type rseType
+            )
             {
                 return null;
             }
 
-            FieldInfo? configField = rseType.GetField("_config", BindingFlags.NonPublic | BindingFlags.Static);
-            object? config = configField?.GetValue(null);
-            if (config == null)
+            if (
+                rseType.GetField("_config", BindingFlags.NonPublic | BindingFlags.Static)?.GetValue(null)
+                    is not { } config
+            )
             {
                 return null;
             }
 
-            FieldInfo? keyField = rseType.GetField(keyFieldName, BindingFlags.Public | BindingFlags.Static);
-            object? keyInstance = keyField?.GetValue(null);
-            if (keyInstance == null)
+            if (
+                rseType.GetField(keyFieldName, BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+                    is not { } keyInstance
+            )
             {
                 return null;
             }
@@ -144,7 +142,7 @@ internal static class ScreenshotExtensionsIntegration
             MethodInfo? getValue = config
                 .GetType()
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                .FirstOrDefault(m => m.Name == "GetValue" && m.GetParameters().Length == 1);
+                .FirstOrDefault(m => m is { Name: "GetValue" } && m.GetParameters() is [var param] && param.ParameterType.IsInstanceOfType(keyInstance));
             if (getValue == null)
             {
                 return null;
@@ -157,6 +155,17 @@ internal static class ScreenshotExtensionsIntegration
         {
             return null;
         }
+    }
+
+    private static MethodInfo? FindStaticMethod(Type type, string name, params Type[] signature)
+    {
+        return type.GetMethod(
+            name,
+            BindingFlags.Public | BindingFlags.Static,
+            binder: null,
+            types: signature,
+            modifiers: null
+        );
     }
 
     private sealed record IntegrationSnapshot(

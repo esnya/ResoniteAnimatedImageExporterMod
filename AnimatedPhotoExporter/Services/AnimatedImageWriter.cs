@@ -57,29 +57,40 @@ internal static class AnimatedImageWriter
                 collection.Add(frame);
             }
 
-            switch (format)
+            bool supported = format switch
             {
-                case AnimatedImageFormat.WebP:
-                    WebPWriteDefines defines = new()
-                    {
-                        Lossless = AnimatedPhotoExporterConfiguration.WebpLossless,
-                        Method = Math.Clamp(AnimatedPhotoExporterConfiguration.WebpMethod, 0, 6)
-                    };
-                    collection.Write(outputPath, defines);
-                    break;
-                case AnimatedImageFormat.Mng:
-                    collection.Write(outputPath, MagickFormat.Mng);
-                    break;
-                case AnimatedImageFormat.Gif:
-                    collection.Write(outputPath, MagickFormat.Gif);
-                    break;
-                default:
-                    AnimatedPhotoExporterMod.Warn($"Unsupported animated format {format}.");
-                    failureReason = $"Unsupported animated format {format}.";
-                    return false;
+                AnimatedImageFormat.WebP => WriteWebp(),
+                AnimatedImageFormat.Mng => Write(() => collection.Write(outputPath, MagickFormat.Mng)),
+                AnimatedImageFormat.Gif => Write(() => collection.Write(outputPath, MagickFormat.Gif)),
+                _ => false
+            };
+
+            if (!supported)
+            {
+                string reason = $"Unsupported animated format {format}.";
+                AnimatedPhotoExporterMod.Warn(reason);
+                failureReason = reason;
+                return false;
             }
+
             writtenPath = outputPath;
             return true;
+
+            bool WriteWebp()
+            {
+                WebPWriteDefines defines = new()
+                {
+                    Lossless = AnimatedPhotoExporterConfiguration.WebpLossless,
+                    Method = Math.Clamp(AnimatedPhotoExporterConfiguration.WebpMethod, 0, 6)
+                };
+                return Write(() => collection.Write(outputPath, defines));
+            }
+
+            bool Write(Action action)
+            {
+                action();
+                return true;
+            }
         }
     }
 
@@ -97,10 +108,7 @@ internal static class AnimatedImageWriter
         [
             .. Enumerable
                 .Range(0, atlasFrames)
-                .Select(idx => (idx, uv: animation.Atlas.GetFrame(idx)))
-                .OrderBy(t => t.uv.Min.y) // bottom to top (fix reversed row order)
-                .ThenBy(t => t.uv.Min.x)  // left to right
-                .Select(t => t.idx)
+                .OrderBy(animation.Atlas.GetFrame, AtlasFrameComparer)
         ];
     }
 
@@ -158,5 +166,13 @@ internal static class AnimatedImageWriter
         {
             return false;
         }
+    }
+
+    private static readonly IComparer<BoundingBox2D> AtlasFrameComparer = Comparer<BoundingBox2D>.Create(CompareAtlasFrames);
+
+    private static int CompareAtlasFrames(BoundingBox2D left, BoundingBox2D right)
+    {
+        int yComparison = left.Min.y.CompareTo(right.Min.y);
+        return yComparison != 0 ? yComparison : left.Min.x.CompareTo(right.Min.x);
     }
 }

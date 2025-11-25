@@ -113,15 +113,15 @@ internal static class AnimatedPhotoSaver
         Directory.CreateDirectory(root);
 
         string baseName = timeTaken.ToString("yyyy-MM-dd HH.mm.ss", CultureInfo.InvariantCulture);
-        string candidate = Path.Combine(root, baseName + extension);
-        int i = 1;
-        while (File.Exists(candidate))
+        for (int i = 0; ; i++)
         {
-            candidate = Path.Combine(root, $"{baseName}-{i}{extension}");
-            i++;
+            string suffix = i == 0 ? string.Empty : $"-{i}";
+            string candidate = Path.Combine(root, $"{baseName}{suffix}{extension}");
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
         }
-
-        return candidate;
     }
 
     private static string GetExtension(AnimatedImageFormat format)
@@ -156,20 +156,20 @@ internal static class AnimatedPhotoSaver
         CancellationToken cancellationToken
     )
     {
-        if (cancellationToken.IsCancellationRequested)
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string? atlasPath = await engine.AssetManager.GatherAssetFile(url, 100f).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return string.IsNullOrEmpty(atlasPath)
+                ? (false, null, "AssetManager returned no path")
+                : (true, atlasPath, null);
+        }
+        catch (OperationCanceledException)
         {
             return (false, null, "cancelled");
         }
-
-        string? atlasPath = await engine.AssetManager.GatherAssetFile(url, 100f).ConfigureAwait(false);
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return (false, null, "cancelled");
-        }
-
-        return string.IsNullOrEmpty(atlasPath)
-            ? (false, null, "AssetManager returned no path")
-            : (true, atlasPath, null);
     }
 
     private static void WriteOutput(
@@ -224,10 +224,9 @@ internal static class AnimatedPhotoSaver
     )
     {
         DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
-        while (true)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            Asset? asset = texture.Asset;
-            AssetLoadState? state = asset?.LoadState;
+            AssetLoadState? state = texture.Asset?.LoadState;
             if (state == AssetLoadState.FullyLoaded)
             {
                 return (TextureLoadOutcome.Loaded, state);
@@ -243,13 +242,10 @@ internal static class AnimatedPhotoSaver
                 return (TextureLoadOutcome.TimedOut, state);
             }
 
-            if (cancellationToken.IsCancellationRequested)
-            {
-                return (TextureLoadOutcome.Cancelled, state);
-            }
-
             await default(NextUpdate);
         }
+
+        return (TextureLoadOutcome.Cancelled, texture.Asset?.LoadState);
     }
 
     private enum TextureLoadOutcome

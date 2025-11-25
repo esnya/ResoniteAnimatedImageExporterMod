@@ -14,7 +14,7 @@ internal static class PhotoMetadataSavePatch
     private static void AfterNotify(PhotoMetadata __instance, ref Task __result)
     {
         // Only support mono screenshots; match base game behavior for this mod.
-        if (__instance.Is360.Value || __instance.StereoLayout.Value != Elements.Core.StereoLayout.None)
+        if (__instance is { Is360.Value: true } or { StereoLayout.Value: not Elements.Core.StereoLayout.None })
         {
             AnimatedPhotoExporterMod.Warn("Animated photo export supports mono screenshots only; skipping.");
             return;
