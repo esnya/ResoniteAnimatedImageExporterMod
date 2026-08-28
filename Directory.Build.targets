@@ -1,12 +1,12 @@
 <Project>
   <Target Name="EnsureResonitePath" BeforeTargets="ResolveReferences">
     <Error
-      Condition="'$(ResonitePath)'==''"
-      Text="ResonitePath must be set (install Resonite next to the repo or pass -p:ResonitePath=/absolute/path/to/Resonite)."
+      Condition="'$(FrooxEnginePresent)'!='true' and !Exists('$(MSBuildThisFileDirectory)Resonite\ResoniteModLoader.dll')"
+      Text="Cannot resolve ResoniteModLoader.dll. Install Resonite locally or place the fallback assembly under $(MSBuildThisFileDirectory)Resonite\."
     />
     <Error
-      Condition="!Exists('$(ResoniteFrooxEngineDll)')"
-      Text="Cannot find FrooxEngine.dll under $(ResolvedResonitePath)."
+      Condition="'$(FrooxEnginePresent)'!='true' and !Exists('$(MSBuildThisFileDirectory)Resonite\0Harmony.dll')"
+      Text="Cannot resolve 0Harmony.dll. Install Resonite locally or place the fallback assembly under $(MSBuildThisFileDirectory)Resonite\."
     />
   </Target>
   <Target

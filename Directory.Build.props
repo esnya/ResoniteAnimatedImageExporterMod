@@ -2,7 +2,7 @@
   <PropertyGroup>
     <Authors>esnya</Authors>
     <Description>Exports animated screenshot items created with AnimatedPhotoExporter</Description>
-    <RepositoryUrl>https://github.com/esnya/ResoniteAnimatedImageExporter</RepositoryUrl>
+    <RepositoryUrl>https://github.com/esnya/ResoniteAnimatedImageExporterMod</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -61,11 +61,13 @@
     <ResoniteModsDir>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'rml_mods'))</ResoniteModsDir>
     <ResoniteHotReloadModsDir>$([System.IO.Path]::Combine('$(ResoniteModsDir)', 'HotReloadMods'))</ResoniteHotReloadModsDir>
     <ResoniteFrooxEngineDll>$([System.IO.Path]::Combine('$(ResolvedResonitePath)', 'FrooxEngine.dll'))</ResoniteFrooxEngineDll>
+    <FrooxEnginePresent Condition="Exists('$(ResoniteFrooxEngineDll)')">true</FrooxEnginePresent>
+    <FrooxEnginePresent Condition="'$(FrooxEnginePresent)'==''">false</FrooxEnginePresent>
   </PropertyGroup>
   <PropertyGroup Condition="!Exists('$(MSBuildThisFileDirectory).git')">
     <Version>0.0.0-local</Version>
   </PropertyGroup>
-  <ItemGroup Condition="'$(IsTestProject)'!='true'">
+  <ItemGroup Condition="'$(IsTestProject)'!='true' and '$(FrooxEnginePresent)'=='true'">
     <Reference Include="ResoniteModLoader">
       <HintPath>$([System.IO.Path]::Combine('$(ResoniteLibrariesDir)', 'ResoniteModLoader.dll'))</HintPath>
       <Private>false</Private>
@@ -99,8 +101,45 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
+  <ItemGroup Condition="'$(IsTestProject)'!='true' and '$(FrooxEnginePresent)'!='true'">
+    <Reference Include="ResoniteModLoader">
+      <HintPath>$(MSBuildThisFileDirectory)Resonite\ResoniteModLoader.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="HarmonyLib">
+      <HintPath>$(MSBuildThisFileDirectory)Resonite\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FrooxEngine">
+      <HintPath>$(PkgResonite_GameLibs)\ref\net10.0\FrooxEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FrooxEngine.Store">
+      <HintPath>$(PkgResonite_GameLibs)\ref\net10.0\FrooxEngine.Store.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="SkyFrost.Base">
+      <HintPath>$(PkgResonite_GameLibs)\ref\net10.0\SkyFrost.Base.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Elements.Assets">
+      <HintPath>$(PkgResonite_GameLibs)\ref\net10.0\Elements.Assets.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Elements.Core">
+      <HintPath>$(PkgResonite_GameLibs)\ref\net10.0\Elements.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup Condition="'$(IsTestProject)'=='true' and '$(FrooxEnginePresent)'!='true'">
+    <ContentWithTargetPath Include="$(PkgResonite_GameLibs)\ref\net10.0\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>%(Filename)%(Extension)</TargetPath>
+    </ContentWithTargetPath>
+  </ItemGroup>
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory).git')">
     <PackageReference Include="GitVersion.MsBuild" PrivateAssets="all" />
+    <PackageReference Include="Resonite.GameLibs" GeneratePathProperty="true" />
   </ItemGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory).github\**\*" LinkBase=".github" />
