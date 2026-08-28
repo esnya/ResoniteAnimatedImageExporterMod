@@ -52,4 +52,4 @@ Opt-in to hot reload support by dropping [ResoniteHotReloadLib](https://github.c
 
 ### Versioning & Releases
 
-[GitVersion](https://gitversion.net/) supplies semantic versions for builds and packages. Push a `v*` tag (for example `v0.1.0`) and the CI workflow will build, test, and publish the release artifacts automatically.
+[MinVer](https://github.com/adamralph/minver) supplies semantic versions from `vX.Y.Z` tags. Push a new tag to build, test, and publish release artifacts automatically. The corrective public release is `v0.1.3`, keeping it newer than the locally distributed `0.1.2` build while leaving existing release assets immutable.

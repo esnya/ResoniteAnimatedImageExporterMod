@@ -6,6 +6,7 @@
     <RepositoryType>git</RepositoryType>
     <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
     <Copyright>Copyright (c) 2025 $(Authors)</Copyright>
     <PackageTags>Resonite,Mod,ResoniteModLoader</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -138,7 +139,7 @@
     </ContentWithTargetPath>
   </ItemGroup>
   <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory).git')">
-    <PackageReference Include="GitVersion.MsBuild" PrivateAssets="all" />
+    <PackageReference Include="MinVer" PrivateAssets="all" />
     <PackageReference Include="Resonite.GameLibs" GeneratePathProperty="true" />
   </ItemGroup>
   <ItemGroup>
