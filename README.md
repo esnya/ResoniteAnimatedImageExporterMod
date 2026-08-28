@@ -5,14 +5,14 @@ AnimatedPhotoExporter is a [ResoniteModLoader](https://github.com/resonite-moddi
 ## Installation
 
 1. Install the [ResoniteModLoader](https://github.com/resonite-modding-group/ResoniteModLoader).
-1. Place the [AnimatedPhotoExporter.dll](https://github.com/esnya/ResoniteAnimatedImageExporter/releases/latest/download/AnimatedPhotoExporter.dll) into your `rml_mods` folder. This folder should be located at `C:\Program Files (x86)\Steam\steamapps\common\Resonite\rml_mods` for a standard installation. You can create it if it's missing, or if you start the game once with the ResoniteModLoader installed it will create this folder for you.
+1. Download the latest package from [GitHub Releases](https://github.com/esnya/ResoniteAnimatedImageExporterMod/releases/latest) and merge its `rml_mods` and `rml_libs` directories into your Resonite installation.
 1. Launch the game. If you want to check that the mod is working you can check your Resonite logs.
 
 ## Development
 
 ### Requirements
 
-- .NET 10 SDK (install the latest preview until GA ships)
+- .NET 10 SDK
 - A Resonite installation that exposes `FrooxEngine.dll` (the default Steam paths on Windows/WSL are discovered automatically, otherwise pass `-p:ResonitePath=/absolute/path/to/Resonite`)
 - [ResoniteHotReloadLib](https://github.com/Nytra/ResoniteHotReloadLib) if you plan to use hot reload
 
@@ -34,6 +34,10 @@ AnimatedPhotoExporter is a [ResoniteModLoader](https://github.com/resonite-moddi
 - Export is gated by mod configuration (`Enabled`, `AnimatedFormat`), with the format surface pluggable (default: WebP). Configuration is managed through the RML config UI.
 - Animated metadata detection depends on a supported animated screenshot component present in the shipped Resonite assemblies; until that is present, the export entry stays suppressed to avoid incorrect output.
 
+### Compatibility
+
+Release builds are compiled against the Resonite `2026.8.27.1094` public game assemblies. Rebuild the mod after a Resonite update if the log reports a missing engine method.
+
 ### Install to `rml_mods` Directory (and `rml_mods/HotReloadMods`)
 
 Set `CopyToMods=true` when building to mirror the compiled DLL into your Resonite install automatically:
@@ -48,5 +52,4 @@ Opt-in to hot reload support by dropping [ResoniteHotReloadLib](https://github.c
 
 ### Versioning & Releases
 
-[GitVersion](https://gitversion.net/) supplies semantic versions for builds and packages. Push a `v*` tag (for example `v0.2.0`) and the CI workflow will build, test, and publish the release artifacts automatically.
-
+[GitVersion](https://gitversion.net/) supplies semantic versions for builds and packages. Push a `v*` tag (for example `v0.1.0`) and the CI workflow will build, test, and publish the release artifacts automatically.
